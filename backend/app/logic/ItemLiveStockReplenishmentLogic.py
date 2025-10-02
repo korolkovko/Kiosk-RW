@@ -18,18 +18,17 @@ class ItemLiveStockReplenishmentLogic:
         self,
         db: Session,
         request: ItemLiveStockReplenishmentRequest,
-        changed_by_username: str
+        changed_by_username: int
     ) -> ItemLiveStockReplenishmentResponse:
         """
         Adjust stock by positive (replenish) or negative (remove) quantity.
         Ensures stock_quantity never goes below zero.
         Logs each operation.
-        
+
         Args:
             db: Database session
             request: Stock replenishment request
-            changed_by_username: Username or identifier of who made the change
-                                (e.g., 'admin_user', 'SYSTEM', 'KIOSK_AUTO_DEDUCTION')
+            changed_by_username: User ID of who made the change
         """
         try:
             # Fetch current availability

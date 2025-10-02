@@ -298,11 +298,10 @@ class ItemLiveStockReplenishment(Base):
     
     # Audit fields
     changed_at = Column(DateTime(timezone=True), server_default=func.now())
-    changed_by = Column(String(100), nullable=False)  # Changed from user_id FK to username string
-    
+    changed_by = Column(Integer, nullable=False)  # User ID who made the change
+
     # Relationships
     item = relationship("ItemLive", back_populates="stock_changes")
-    # Removed user relationship since changed_by is now a string, not FK
 
 
 class Device(Base):
