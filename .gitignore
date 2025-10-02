@@ -81,3 +81,13 @@ uploads/
 
 # Alembic bytecode
 backend/alembic/versions/*.pyc
+
+# Virtual environments
+kiosk-env/
+venv/
+env/
+.venv/
+
+# Test files
+test_*.py
+*_test.py

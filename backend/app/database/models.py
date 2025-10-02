@@ -13,6 +13,7 @@ from enum import Enum
 import uuid
 
 from .DomainModel import Base
+from ..orchestrator.fsm_spec import State, Event
 
 
 # Enum definitions based on domain model
@@ -25,11 +26,13 @@ class OrderStatus(str, Enum):
 
 
 class PaymentStatus(str, Enum):
-    """Payment status enumeration"""
+    """non termianl"""
     AWAITING = "AWAITING"
+    """Payment status enumeration"""
+    SUCCESS = "SUCCESS"
     DECLINED = "DECLINED"
     ERROR = "ERROR"
-    PAID = "PAID"
+    TIMEOUT = "TIMEOUT"
 
 
 # PaymentMethodCode enum removed - using String instead for flexibility
@@ -50,6 +53,16 @@ class AuthMethod(str, Enum):
     QR = "QR"
     NFC_DEVICE = "NFCDevice"
     OAUTH2 = "Oauth2"
+
+
+class ActorType(str, Enum):
+    """Actor types for FSM transitions"""
+    CUSTOMER = "CUSTOMER"
+    POS_TERMINAL = "POS_TERMINAL"
+    FISCAL_DEVICE = "FISCAL_DEVICE"
+    PRINTER = "PRINTER"
+    KITCHEN = "KITCHEN"
+    SYSTEM = "SYSTEM"
 
 
 # Core domain models
@@ -97,7 +110,7 @@ class User(Base):
     # Relationships
     role = relationship("Role", back_populates="users")
     created_items = relationship("ItemLive", back_populates="creator", foreign_keys="ItemLive.created_by")
-    stock_changes = relationship("ItemLiveStockReplenishment", back_populates="user")
+    # Removed stock_changes relationship since ItemLiveStockReplenishment.changed_by is now a string, not FK
     sessions = relationship("Session", back_populates="user")
 
 
@@ -271,7 +284,7 @@ class ItemLiveStockReplenishment(Base):
     operation_id = Column(BigInteger, primary_key=True, index=True)
     
     # Item reference
-    item_id = Column(BigInteger, ForeignKey("items_live.item_id", ondelete="CASCADE"), 
+    item_id = Column(BigInteger, ForeignKey("items_live.item_id", ondelete="CASCADE"),
                      nullable=False, index=True)
     
     # Item snapshots at time of operation
@@ -285,11 +298,11 @@ class ItemLiveStockReplenishment(Base):
     
     # Audit fields
     changed_at = Column(DateTime(timezone=True), server_default=func.now())
-    changed_by = Column(Integer, ForeignKey("users.user_id"), nullable=False)
+    changed_by = Column(String(100), nullable=False)  # Changed from user_id FK to username string
     
     # Relationships
     item = relationship("ItemLive", back_populates="stock_changes")
-    user = relationship("User", back_populates="stock_changes")
+    # Removed user relationship since changed_by is now a string, not FK
 
 
 class Device(Base):
@@ -361,7 +374,7 @@ class Order(Base):
     order_time = Column(DateTime(timezone=True), server_default=func.now())
     
     # Financial information
-    currency = Column(String(3), nullable=False, default="RUB")
+    currency = Column(String(3), nullable=False, default="643")  # ISO 4217 numeric code for RU
     total_amount_net = Column(Numeric(10, 2), nullable=False)
     total_amount_vat = Column(Numeric(10, 2), nullable=False)
     total_amount_gross = Column(Numeric(10, 2), nullable=False)
@@ -392,6 +405,9 @@ class Order(Base):
     customer = relationship("KnownCustomer", back_populates="orders")
     session = relationship("Session", back_populates="orders")
     payments = relationship("Payment", back_populates="order")
+    order_items = relationship("OrderItem", back_populates="order")
+    fsm_runtime = relationship("OrderFSMKioskRuntime", back_populates="order", uselist=False)
+    lifecycle_logs = relationship("OrderLifecycleLog", back_populates="order")
 
 
 class Payment(Base):
@@ -427,6 +443,11 @@ class Payment(Base):
     # Response information
     response_code = Column(String(10), nullable=True)
     response_message = Column(String(500), nullable=True)
+    
+    # Receipt information from DC_INPAS
+    response_raw_xml = Column(Text, nullable=True)  # Raw response from DC_INPAS
+    customer_receipt = Column(Text, nullable=True)  # Customer receipt from DC response
+    merchant_receipt = Column(Text, nullable=True)  # Merchant receipt from DC response
     
     # Audit fields
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -496,3 +517,208 @@ class FiscalDevice(Base):
     
     # Relationships
     device = relationship("Device", back_populates="fiscal_device")
+
+
+class OrderItem(Base):
+    """Line within an order representing a selected item"""
+    __tablename__ = "order_items"
+    
+    # Primary key
+    item_in_order_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    
+    # Order reference
+    order_id = Column(BigInteger, ForeignKey("orders.order_id"), nullable=False, index=True)
+    
+    # Item reference and snapshots
+    item_id = Column(BigInteger, nullable=False)  # Snapshot of ItemLive.item_id
+    name_ru = Column(String(200), nullable=False)  # Snapshot of ItemLive.name_ru
+    name_eng = Column(String(200), nullable=True)  # Snapshot of ItemLive.name_eng
+    description_ru = Column(Text, nullable=False)  # Snapshot of ItemLive.description_ru
+    description_eng = Column(Text, nullable=True)  # Snapshot of ItemLive.description_eng
+    
+    # Unit of measure snapshots
+    unit_of_measure_ru = Column(String(100), nullable=False)  # Snapshot of ItemLive.unit_measure
+    unit_of_measure_eng = Column(String(100), nullable=True)  # Snapshot of ItemLive.unit_measure
+    
+    # Pricing snapshots
+    item_price_net = Column(Numeric(10, 2), nullable=False)  # Snapshot of ItemLive.price_net
+    item_vat_rate = Column(Numeric(5, 2), nullable=False)  # Snapshot of ItemLive.vat_rate
+    item_vat_amount = Column(Numeric(10, 2), nullable=False)  # Snapshot of ItemLive.vat_amount
+    item_price_gross = Column(Numeric(10, 2), nullable=False)  # Snapshot of ItemLive.price_gross
+    
+    # Order line details
+    quantity = Column(Integer, nullable=False)
+    total_price_net = Column(Numeric(10, 2), nullable=False)
+    applied_vat_rate = Column(Numeric(5, 2), nullable=False)
+    total_vat_amount = Column(Numeric(10, 2), nullable=False)
+    total_price_gross = Column(Numeric(10, 2), nullable=False)
+    
+    # Customer preferences
+    wishes = Column(String(500), nullable=True)  # Customer-specific wishes/options
+    
+    # Relationships
+    order = relationship("Order", back_populates="order_items")
+
+
+class OrderFSMKioskRuntime(Base):
+    """FSM Kiosk runtime for order - reflects real order's way from payment to being picked-up"""
+    __tablename__ = "order_fsm_kiosk_runtime"
+    
+    # Primary key
+    order_fsm_kiosk_runtime_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    
+    # Order reference
+    order_id = Column(BigInteger, ForeignKey("orders.order_id"), nullable=False, unique=True, index=True)
+    
+    # Current FSM state - using State enum from fsm_spec
+    fsm_kiosk_state = Column(SQLEnum(State), nullable=False, default=State.INIT)
+    
+    # Payment session context
+    payment_session_id = Column(String(100), nullable=True)
+    pos_terminal_id = Column(Integer, ForeignKey("devices.device_id"), nullable=True)
+    payment_attempt_started_at = Column(DateTime(timezone=True), nullable=True)
+    payment_attempt_response_at = Column(DateTime(timezone=True), nullable=True)
+    payment_attempt_result_code = Column(String(50), nullable=True)
+    payment_attempt_result_description = Column(JSONB, nullable=True)
+    payment_id_transaction = Column(String(100), nullable=True)
+    payment_slip_number_id = Column(String(100), nullable=True)
+    
+    # Fiscal session context
+    fiscal_session_id = Column(String(100), nullable=True)
+    fiscal_device_id = Column(Integer, ForeignKey("devices.device_id"), nullable=True)
+    fiscal_attempt_started_at = Column(DateTime(timezone=True), nullable=True)
+    fiscal_attempt_response_at = Column(DateTime(timezone=True), nullable=True)
+    fiscal_attempt_result_code = Column(String(50), nullable=True)
+    fiscal_attempt_result_description = Column(JSONB, nullable=True)
+    fiscal_id_transaction = Column(String(100), nullable=True)
+    fiscalisation_number_id = Column(String(100), nullable=True)
+    
+    # Printing session context
+    printing_session_id = Column(String(100), nullable=True)
+    printing_device_id = Column(Integer, ForeignKey("devices.device_id"), nullable=True)
+    printing_attempt_started_at = Column(DateTime(timezone=True), nullable=True)
+    printing_attempt_response_at = Column(DateTime(timezone=True), nullable=True)
+    printing_attempt_result_code = Column(String(50), nullable=True)
+    printing_attempt_result_description = Column(JSONB, nullable=True)
+    
+    # Pickup information
+    pickup_code = Column(String(20), nullable=True)
+    pin_code = Column(String(10), nullable=True)
+    qr_code = Column(String(500), nullable=True)
+    
+    # Audit fields
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    
+    # Relationships
+    order = relationship("Order", back_populates="fsm_runtime")
+    pos_terminal = relationship("Device", foreign_keys=[pos_terminal_id])
+    fiscal_device = relationship("Device", foreign_keys=[fiscal_device_id])
+    printing_device = relationship("Device", foreign_keys=[printing_device_id])
+
+
+class OrderLifecycleLog(Base):
+    """FSM Kiosk audit log for orders - logs every state transition during the lifetime of an order"""
+    __tablename__ = "order_lifecycle_log"
+    
+    # Primary key
+    order_lifecycle_log_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    
+    # Order reference
+    order_id = Column(BigInteger, ForeignKey("orders.order_id"), nullable=False, index=True)
+    
+    # FSM Runtime reference
+    order_fsm_kiosk_runtime_id = Column(UUID(as_uuid=True), 
+                                       ForeignKey("order_fsm_kiosk_runtime.order_fsm_kiosk_runtime_id"), 
+                                       nullable=True)
+    
+    # State transition details - using enums from fsm_spec
+    from_state = Column(SQLEnum(State), nullable=True)
+    to_state = Column(SQLEnum(State), nullable=False)
+    trigger_event = Column(SQLEnum(Event), nullable=True)  # Nullable for initial state transitions
+    
+    # Actor information
+    actor_type = Column(SQLEnum(ActorType), nullable=True)
+    actor_id = Column(String(100), nullable=True)
+    
+    # Additional context
+    comment = Column(Text, nullable=True)
+    
+    # Audit fields
+    event_created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    order = relationship("Order", back_populates="lifecycle_logs")
+    fsm_runtime = relationship("OrderFSMKioskRuntime")
+
+
+class SlipReceipt(Base):
+    """Slip receipts (e.g., printed or generated by POS terminal)"""
+    __tablename__ = "slip_receipts"
+    
+    # Primary key
+    slip_receipt_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    
+    # Order reference
+    order_id = Column(BigInteger, ForeignKey("orders.order_id"), nullable=True, index=True)
+    
+    # Receipt details
+    receipt_pos_terminal_returned_id = Column(String(100), nullable=True)
+    receipt_body = Column(JSONB, nullable=True)
+    
+    # Audit fields
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_by = Column(String(100), nullable=True)
+    
+    # Relationships
+    order = relationship("Order")
+
+
+class FiscalReceipt(Base):
+    """Fiscal receipts (e.g., receipts printed by fiscal printer)"""
+    __tablename__ = "fiscal_receipts"
+    
+    # Primary key
+    fiscal_receipt_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    
+    # Order reference
+    order_id = Column(BigInteger, ForeignKey("orders.order_id"), nullable=True, index=True)
+    
+    # Receipt details
+    receipt_fiscal_machine_returned_id = Column(String(100), nullable=True)
+    receipt_body = Column(JSONB, nullable=True)
+    
+    # Audit fields
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_by = Column(String(100), nullable=True)
+    
+    # Relationships
+    order = relationship("Order")
+
+
+class SummaryReceipt(Base):
+    """Summary check - a logical combination of slip and fiscal receipts with pickup info"""
+    __tablename__ = "summary_receipts"
+    
+    # Primary key
+    summary_receipt_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    
+    # Order reference
+    order_id = Column(BigInteger, ForeignKey("orders.order_id"), nullable=True, index=True)
+    
+    # Receipt references
+    slip_receipt_id = Column(UUID(as_uuid=True), ForeignKey("slip_receipts.slip_receipt_id"), nullable=True)
+    fiscal_receipt_id = Column(UUID(as_uuid=True), ForeignKey("fiscal_receipts.fiscal_receipt_id"), nullable=True)
+    
+    # Pickup information
+    pickup_code = Column(String(20), nullable=True)
+    pin_code = Column(String(10), nullable=True)
+    
+    # Audit fields
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_by = Column(String(100), nullable=True)
+    
+    # Relationships
+    order = relationship("Order")
+    slip_receipt = relationship("SlipReceipt")
+    fiscal_receipt = relationship("FiscalReceipt")

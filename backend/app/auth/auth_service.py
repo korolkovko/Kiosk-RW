@@ -21,6 +21,7 @@ class AuthService:
         self.secret_key = self.settings.JWT_SECRET_KEY
         self.algorithm = self.settings.JWT_ALGORITHM
         self.access_token_expire_minutes = self.settings.ACCESS_TOKEN_EXPIRE_MINUTES
+        self.refresh_token_expire_days = self.settings.REFRESH_TOKEN_EXPIRE_DAYS
 
     def create_access_token(self, data: Dict[str, Any], expires_delta: Optional[timedelta] = None) -> str:
         """
@@ -54,7 +55,7 @@ class AuthService:
 
     def verify_token(self, token: str) -> TokenData:
         """
-        Verify and decode a JWT token
+        Verify and decode a JWT token (excludes kiosk tokens)
         
         Args:
             token: JWT token string to verify
@@ -63,7 +64,10 @@ class AuthService:
             TokenData object with decoded token information
             
         Raises:
-            HTTPException: If token is invalid or expired
+            HTTPException: If token is invalid, expired, or belongs to kiosk user
+            
+        Note:
+            Kiosk tokens are excluded from standard authentication and must use dedicated kiosk endpoints
         """
         credentials_exception = HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -84,6 +88,10 @@ class AuthService:
             if user_id is None or username is None:
                 raise credentials_exception
             
+            # Exclude kiosk tokens from standard authentication
+            if role_name == "kiosk":
+                raise credentials_exception
+            
             # Create and return token data
             token_data = TokenData(
                 user_id=user_id,
@@ -97,7 +105,7 @@ class AuthService:
 
     def authenticate_user(self, db: Session, username: str, password: str) -> Optional[User]:
         """
-        Authenticate user with username and password
+        Authenticate user with username and password (excludes kiosk users)
         
         Args:
             db: Database session
@@ -106,11 +114,18 @@ class AuthService:
             
         Returns:
             User object if authentication successful, None otherwise
+            
+        Note:
+            Kiosk users are excluded from standard authentication and must use dedicated kiosk endpoints
         """
         # Find user by username
         user = db.query(User).filter(User.username == username).first()
         
         if not user:
+            return None
+        
+        # Exclude kiosk users from standard authentication
+        if user.role_name == "kiosk":
             return None
         
         # Verify password
@@ -209,6 +224,67 @@ class AuthService:
         # Check if user is admin or superadmin
         role_name = role.name.lower()
         return role_name in ["admin", "superadmin"]
+
+    def create_refresh_token(self, data: Dict[str, Any], expires_delta: Optional[timedelta] = None) -> str:
+        """
+        Create JWT refresh token
+        """
+        to_encode = data.copy()
+        if expires_delta:
+            expire = datetime.utcnow() + expires_delta
+        else:
+            expire = datetime.utcnow() + timedelta(days=self.refresh_token_expire_days)
+        to_encode.update({
+            "exp": expire,
+            "iat": datetime.utcnow(),
+            "type": "refresh_token"
+        })
+        encoded_jwt = jwt.encode(to_encode, self.secret_key, algorithm=self.algorithm)
+        return encoded_jwt
+
+    def verify_refresh_token(self, token: str) -> TokenData:
+        """
+        Verify and decode JWT refresh token (excludes kiosk refresh tokens)
+        
+        Args:
+            token: JWT refresh token string to verify
+            
+        Returns:
+            TokenData object with decoded token information
+            
+        Raises:
+            HTTPException: If refresh token is invalid, expired, or belongs to kiosk user
+            
+        Note:
+            Kiosk refresh tokens are excluded from standard authentication and must use dedicated kiosk endpoints
+        """
+        credentials_exception = HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate refresh token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+        try:
+            payload = jwt.decode(token, self.secret_key, algorithms=[self.algorithm])
+            token_type = payload.get("type")
+            if token_type != "refresh_token":
+                raise credentials_exception
+            user_id: Optional[int] = payload.get("user_id")
+            username: Optional[str] = payload.get("username")
+            role_name: Optional[str] = payload.get("role_name")
+            if user_id is None or username is None:
+                raise credentials_exception
+            
+            # Exclude kiosk refresh tokens from standard authentication
+            if role_name == "kiosk":
+                raise credentials_exception
+            
+            return TokenData(
+                user_id=user_id,
+                username=username,
+                role_name=role_name
+            )
+        except JWTError:
+            raise credentials_exception
 
 
 # Global auth service instance

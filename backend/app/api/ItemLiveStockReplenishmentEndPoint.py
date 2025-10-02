@@ -37,7 +37,7 @@ async def replenish_or_remove_stock(
         return await item_live_stock_replenishment_logic.replenish_or_remove(
             db=db,
             request=request,
-            changed_by=current_user.user_id
+            changed_by_username=current_user.username  # Changed from user_id to username
         )
     except HTTPException:
         raise

@@ -7,14 +7,9 @@ INSERT INTO roles (name, permissions, created_at) VALUES
 ('superadmin', NULL, NOW()),
 ('admin', NULL, NOW()),
 ('customer', NULL, NOW()),
-('pos-terminal', NULL, NOW()),
-('kkt', NULL, NOW()),
-('externalDisplay', NULL, NOW()),
+('kiosk', NULL, NOW()),
 ('externalKitchen', NULL, NOW()),
-('externalPostBox', NULL, NOW()),
-('externalPaymentGate', NULL, NOW()),
-('externalEmailService', NULL, NOW()),
-('externalSMSService', NULL, NOW())
+('externalPostBox', NULL, NOW())
 ON CONFLICT (name) DO NOTHING;
 
 COMMIT;

@@ -1,21 +1,19 @@
-# auth.py
-# Authentication endpoints for login, logout, and initial setup
+# AuthenticationEndpoints.py
+# Authentication endpoints for login, logout, and token refresh
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Response, Cookie
 from sqlalchemy.orm import Session
 from typing import Dict, Any
 
 from ..database import get_db
-from ..models.auth import LoginRequest, LoginResponse, LogoutResponse
-from ..models.user import UserResponse
+from ..models.AuthenticationEndpointsPydanticModel import LoginRequest, LoginResponse, LogoutResponse
+from ..models.UserManagementPydanticModel import UserResponse
 from ..auth import get_current_user
-from ..auth.auth_service import auth_service
-from ..services.user_service import user_service
+from ..logic.AuthenticationEndpointLogic import authentication_endpoint_logic
 from ..database.models import User
 
 # Create router for authentication endpoints
 router = APIRouter(prefix="/auth", tags=["authentication"])
-
 
 
 @router.post("/login", response_model=LoginResponse)
@@ -36,27 +34,7 @@ async def login(
     Raises:
         HTTPException: If credentials are invalid
     """
-    # Authenticate user
-    user = auth_service.authenticate_user(
-        db=db,
-        username=login_request.username,
-        password=login_request.password
-    )
-    
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    
-    # Update last login timestamp
-    user_service.update_last_login(db, user.user_id)
-    
-    # Generate access token
-    token_data = auth_service.create_token_for_user(user)
-    
-    return LoginResponse(**token_data)
+    return await authentication_endpoint_logic.login(db, login_request)
 
 
 @router.post("/logout", response_model=LogoutResponse)
@@ -75,7 +53,7 @@ async def logout(
     Returns:
         Logout confirmation message
     """
-    return LogoutResponse(message=f"User {current_user.username} successfully logged out")
+    return await authentication_endpoint_logic.logout(current_user)
 
 
 @router.get("/me", response_model=UserResponse)
@@ -91,6 +69,16 @@ async def get_current_user_info(
     Returns:
         Current user information
     """
-    return UserResponse.model_validate(current_user)
+    return UserResponse.model_validate(await authentication_endpoint_logic.get_current_user_info(current_user))
+    
 
-
+@router.post("/refresh", response_model=LoginResponse)
+async def refresh_token(
+    response: Response,
+    db: Session = Depends(get_db),
+    refresh_token: str = Cookie(None)
+):
+    """
+    Refresh access token using HttpOnly refresh token cookie
+    """
+    return await authentication_endpoint_logic.refresh_token(response, db, refresh_token)

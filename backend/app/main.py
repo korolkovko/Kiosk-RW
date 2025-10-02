@@ -10,6 +10,7 @@ from .api import api_router
 from .config import get_settings
 from .database import engine
 from .database.models import Base
+import textwrap
 
 settings = get_settings()
 print("📦 DB URL:", os.getenv("DATABASE_URL"))
@@ -64,14 +65,34 @@ async def root():
 async def health_check():
     return {"status": "healthy", "version": "0.1.0"}
 
+import textwrap
+def log_envs():
+    env_items = sorted(os.environ.items())
+    formatted = "\n".join(f"{key}={value}" for key, value in env_items)
+
+    message = textwrap.indent(formatted, "    ")
+
+    wrapped_message = "\n".join([
+        "-" * 80, "ENVIRONMENT VARIABLES (BEGIN):", "-" * 80,
+        message,
+        "-" * 80, "ENVIRONMENT VARIABLES (END):", "-" * 80
+    ])
+
+    # Log as one INFO record
+    print("\n%s", wrapped_message)
+print(f"{__name__} this is the module name")
+print(settings)
+log_envs()
 
 if __name__ == "__main__":
-    import uvicorn
     
+    import uvicorn
+    log_envs()
+
     uvicorn.run(
         "app.main:app",
-        host="0.0.0.0",
-        port=8000,
+        host=settings.HOST,
+        port=settings.PORT,
         reload=settings.DEBUG,
         log_level="info",
     )

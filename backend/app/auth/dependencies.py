@@ -19,19 +19,22 @@ async def get_current_user(
     db: Session = Depends(get_db)
 ) -> User:
     """
-    Dependency to get current authenticated user from JWT token
+    Dependency to get current authenticated user from JWT token (excludes kiosk users)
     
     Args:
         credentials: HTTP authorization credentials containing JWT token
         db: Database session
         
     Returns:
-        Current authenticated user
+        Current authenticated user (non-kiosk users only)
         
     Raises:
-        HTTPException: If token is invalid or user not found
+        HTTPException: If token is invalid, user not found, or user is kiosk
+        
+    Note:
+        Kiosk users are excluded from standard authentication and must use dedicated kiosk endpoints
     """
-    # Verify JWT token
+    # Verify JWT token (already excludes kiosk tokens)
     token_data = auth_service.verify_token(credentials.credentials)
     
     # Get user from database
@@ -41,6 +44,14 @@ async def get_current_user(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    # Double-check: exclude kiosk users from standard authentication
+    if user.role_name == "kiosk":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
             headers={"WWW-Authenticate": "Bearer"},
         )
     

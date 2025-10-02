@@ -1,5 +1,5 @@
-# auth.py
-# Pydantic schemas for authentication
+# AuthenticationEndpointsPydanticModel.py
+# Pydantic schemas for authentication endpoints
 
 from pydantic import BaseModel, Field, ConfigDict
 from typing import Optional
@@ -52,28 +52,6 @@ class TokenData(BaseModel):
     username: Optional[str] = None
     role_name: Optional[str] = None
     exp: Optional[datetime] = None
-    # Kiosk-specific fields for extended functionality
-    jti: Optional[str] = None
-    device_id: Optional[str] = None
-
-
-class SuperAdminSetupRequest(BaseModel):
-    """Schema for first-time SuperAdmin setup"""
-    username: str = Field(..., min_length=3, max_length=100, description="SuperAdmin username")
-    password: str = Field(..., min_length=8, max_length=100, description="SuperAdmin password")
-    email: Optional[str] = Field(None, description="SuperAdmin email")
-    phone: Optional[str] = Field(None, description="SuperAdmin phone")
-    
-    model_config = ConfigDict(
-        json_schema_extra={
-            "example": {
-                "username": "superadmin",
-                "password": "SuperSecurePassword123!",
-                "email": "super@admin.com",
-                "phone": "+1234567890"
-            }
-        }
-    )
 
 
 class LogoutResponse(BaseModel):
