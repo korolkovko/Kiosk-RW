@@ -31,8 +31,6 @@ class PasswordManager:
         """
         # Bcrypt has a 72-byte limit, check password length
         password_bytes = password.encode('utf-8')
-        print(f"🔍 DEBUG: Password length = {len(password)} chars, {len(password_bytes)} bytes")
-        print(f"🔍 DEBUG: Password repr = {repr(password)}")
         if len(password_bytes) > 72:
             raise ValueError(
                 f"Password is {len(password_bytes)} bytes (limit: 72 bytes). Password cannot be longer than 72 bytes."
