@@ -8,7 +8,7 @@ from typing import Optional
 class SuperAdminSetupRequest(BaseModel):
     """Schema for first-time SuperAdmin setup"""
     username: str = Field(..., min_length=3, max_length=100, description="SuperAdmin username")
-    password: str = Field(..., min_length=8, max_length=100, description="SuperAdmin password")
+    password: str = Field(..., min_length=8, max_length=72, description="SuperAdmin password (bcrypt limit: 72 bytes)")
     email: Optional[str] = Field(None, description="SuperAdmin email")
     phone: Optional[str] = Field(None, description="SuperAdmin phone")
     
