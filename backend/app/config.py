@@ -61,7 +61,7 @@ class Settings(BaseSettings):
     LOG_FILE_PATH: str = "./logs/app.log"
 
     # CORS Settings
-    ALLOWED_ORIGINS: List[str] = ["http://localhost", "http://localhost:3000"]
+    ALLOWED_ORIGINS: List[str] = Field(default=["*"], description="List of allowed origins for CORS")
 
     # External Integrations
     POS_API_URL: str = ""
