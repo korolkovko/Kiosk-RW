@@ -1,21 +1,17 @@
 # password.py
 # Password hashing and verification utilities
 
-from passlib.context import CryptContext
+import bcrypt
 from typing import Optional
 
 
 class PasswordManager:
     """Handles password hashing and verification using bcrypt"""
-    
+
     def __init__(self):
-        # Initialize password context with bcrypt
-        self._pwd_context = CryptContext(
-            schemes=["bcrypt"], 
-            deprecated="auto",
-            bcrypt__rounds=12  # Strong hashing rounds
-        )
-    
+        # Bcrypt rounds for hashing (12 = strong security)
+        self.rounds = 12
+
     def hash_password(self, password: str) -> str:
         """
         Hash a plain text password using bcrypt
@@ -36,34 +32,45 @@ class PasswordManager:
                 f"Password is {len(password_bytes)} bytes (limit: 72 bytes). Password cannot be longer than 72 bytes."
             )
 
-        return self._pwd_context.hash(password)
-    
+        # Generate salt and hash password
+        salt = bcrypt.gensalt(rounds=self.rounds)
+        hashed = bcrypt.hashpw(password_bytes, salt)
+        return hashed.decode('utf-8')
+
     def verify_password(self, plain_password: str, hashed_password: str) -> bool:
         """
         Verify a plain text password against a hashed password
-        
+
         Args:
             plain_password: Plain text password to verify
             hashed_password: Hashed password to compare against
-            
+
         Returns:
             True if password matches, False otherwise
         """
         if not hashed_password:
             return False
-        return self._pwd_context.verify(plain_password, hashed_password)
-    
+
+        try:
+            password_bytes = plain_password.encode('utf-8')
+            hashed_bytes = hashed_password.encode('utf-8')
+            return bcrypt.checkpw(password_bytes, hashed_bytes)
+        except Exception:
+            return False
+
     def needs_update(self, hashed_password: str) -> bool:
         """
         Check if a hashed password needs to be rehashed
-        
+
         Args:
             hashed_password: Hashed password to check
-            
+
         Returns:
-            True if password needs rehashing, False otherwise
+            Always returns False for bcrypt (no automatic updates needed)
         """
-        return self._pwd_context.needs_update(hashed_password)
+        # bcrypt doesn't have an automatic needs_update mechanism
+        # This method is kept for compatibility
+        return False
 
 
 # Global password manager instance
