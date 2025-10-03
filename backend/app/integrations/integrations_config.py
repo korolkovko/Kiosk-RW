@@ -15,7 +15,7 @@ class PaymentConfig:
     mockup_mode: bool = False
 
     # Production service URLs
-    gateway_url: str = "https://unified-mocks-service-production.up.railway.app"
+    gateway_url: str = "https://web-production-a21a7.up.railway.app"
     merchant_id: str = ""
     terminal_id: str = ""
     api_key: str = ""
@@ -34,7 +34,7 @@ class PaymentConfig:
         """Load from environment variables"""
         return cls(
             mockup_mode=os.getenv("PAYMENT_MOCKUP", "false").lower() == "true",
-            gateway_url=os.getenv("PAYMENT_GATEWAY_URL", "https://unified-mocks-service-production.up.railway.app"),
+            gateway_url=os.getenv("PAYMENT_GATEWAY_URL", "https://web-production-a21a7.up.railway.app"),
             merchant_id=os.getenv("PAYMENT_MERCHANT_ID", ""),
             terminal_id=os.getenv("PAYMENT_TERMINAL_ID", ""),
             api_key=os.getenv("PAYMENT_API_KEY", ""),
