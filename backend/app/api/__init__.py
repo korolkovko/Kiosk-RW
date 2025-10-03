@@ -14,6 +14,7 @@ from .KIOSKManagement import router as kiosk_router
 from .KioskAuthenticationEndpoints import router as kiosk_auth_router
 from .KioskAdminMonitoringEndpoints import router as kiosk_admin_router
 from .KioskOrderManagement import router as kiosk_order_router
+from .PaymentGatewayTestEndpoints import router as payment_gateway_test_router
 
 # Create main API router
 api_router = APIRouter()
@@ -31,5 +32,6 @@ api_router.include_router(kiosk_router)                   # Kiosk management end
 api_router.include_router(kiosk_auth_router)              # Kiosk authentication endpoints
 api_router.include_router(kiosk_admin_router)             # Kiosk admin monitoring endpoints
 api_router.include_router(kiosk_order_router)             # Kiosk order management endpoints
+api_router.include_router(payment_gateway_test_router)    # Payment gateway testing endpoints
 
 __all__ = ["api_router"]
